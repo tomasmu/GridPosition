@@ -13,9 +13,11 @@ namespace GridPosition
         {
             Robot robot = new Robot("Bertil");
             robot.printPosition($"{robot.Name} was just created");
-            string commands = "RRRRLLLLARA";
+            robot.printDirection($"facing this direction");
+            string commands = "DDA";    //bugg: DD = 45+45 ger fel direction :-(
             Console.WriteLine($"* new robot! i command thee: {commands}");
-            robot.ExecuteCommand(commands);
+            Position finalPosition = robot.ExecuteCommands(robot.Position, commands);
+            Console.WriteLine($"final pos {finalPosition.Coordinate.X}, {finalPosition.Coordinate.Y}");
         }
     }
 
@@ -23,10 +25,12 @@ namespace GridPosition
     {
         public string Name { get; set; }
         public Position Position { get; set; }
-        private Dictionary<string, int> rotationDefinition = new Dictionary<string, int>
+        private IDictionary<char, int> rotationDefinition = new Dictionary<char, int>
         {
-            ["R"] = 90,
-            ["L"] = -90
+            ['R'] = 90,
+            ['L'] = -90,
+            ['U'] = 180,
+            ['D'] = 45
         };
 
         public Robot(string name)
@@ -35,43 +39,34 @@ namespace GridPosition
             this.Position = new Position();
         }
 
-        public void ExecuteCommand(string command)
+        public Position ExecuteCommands(Position pos, string commands)
         {
-            for (int i = 0; i < command.Length; i++)
+            if (String.IsNullOrEmpty(commands))
             {
-                var cmd = command[i].ToString();
-                switch (cmd)
-                {
-                    case "R":
-                    case "L":
-                        int angle;
-                        if (rotationDefinition.TryGetValue(cmd, out angle)) { Position.Rotate(angle); }
-                        else { Console.WriteLine($"index for {cmd} was not found"); }
-                        break;
-                    case "A":
-                        Position.Move();
-                        break;
-                    default:
-                        cmd = cmd + " = unknown command";
-                        break;
-                }
-                printPosition($"cmd {cmd}");
+                return pos;
             }
-            Console.WriteLine($"done! exclaimed {this.Name} joyfully");
+            char cmd = commands[0];
+            Position newPosition = new Position(pos);
+            if (cmd == 'A')
+            {
+                newPosition.Move();
+            }
+            else
+            {
+                int angle = rotationDefinition[cmd];
+                newPosition.Rotate(angle);
+            }
+            return ExecuteCommands(newPosition, commands.Substring(1));
         }
 
-        public void ExecuteCommand(char command)
+        public void printPosition(string message = "")
         {
-            ExecuteCommand(command.ToString());
+            Console.WriteLine($"position: ({Position.Coordinate.X}, {Position.Coordinate.Y}), {message}");
         }
 
-        public void printPosition(string text)
+        public void printDirection(string message = "")
         {
-            Console.WriteLine($"hännä: ({Position.Coordinate.X}, {Position.Coordinate.Y}), dir ({Position.Direction.X}, {Position.Direction.Y}), {text}");
-        }
-        public void printPosition()
-        {
-            printPosition(":-)");
+            Console.WriteLine($"direction: [{ Position.Direction.X}, { Position.Direction.Y}], {message}");
         }
     }
 
@@ -86,15 +81,31 @@ namespace GridPosition
             this.Direction = new Direction();
         }
 
+        public Position(Position pos)
+        {
+            this.Coordinate = new Coordinate(pos.Coordinate);
+            this.Direction = new Direction(pos.Direction);
+        }
+
         public void Rotate(int degrees)
         {
-            RotationMatrix rotate = new RotationMatrix(degrees);
-            Direction = Direction * rotate;
+            Direction = RotationMatrix(degrees) * Direction;
         }
 
         public void Move()
         {
             Coordinate.Step(Direction);
+        }
+
+        private int[,] RotationMatrix(int degrees)
+        {
+            double radians = degrees * PI / 180;
+            int cosv = (int)Round(Cos(radians));
+            int sinv = (int)Round(Sin(radians));
+            return new int[,] {
+                { cosv, sinv },
+                { -sinv, cosv }
+            };
         }
     }
 
@@ -108,6 +119,12 @@ namespace GridPosition
             this.X = this.Y = 0;
         }
 
+        public Coordinate(Coordinate coord)
+        {
+            this.X = coord.X;
+            this.Y = coord.Y;
+        }
+
         public void Step(Direction dir)
         {
             this.X += dir.X;
@@ -117,6 +134,7 @@ namespace GridPosition
 
     class Direction
     {
+        //must be an array for matrix multiplication
         private int[] direction { get; set; }
 
         public int X
@@ -133,50 +151,44 @@ namespace GridPosition
 
         public Direction()
         {
-            this.direction = new int[] { 0, 1 };    //north
+            this.direction = Directions.North.direction;
         }
 
-        public Direction(int[] dirType) //Direction(DirectionType dirType)?
+        public Direction(Direction dir)
         {
-            this.direction = dirType;
+            this.direction = new int[2];
+            this.X = dir.X;
+            this.Y = dir.Y;
+            Console.WriteLine($"new direction: {X}, {Y}");
         }
 
-        public static Direction operator *(Direction dir, RotationMatrix rot)
+        public Direction(int x, int y)
         {
-            Direction newDir = new Direction(new int[] { 0, 0 });   //new Direction(DirectionTypes.HeadNowhere)?
+            this.direction = new int[] { x, y };
+        }
+
+        //recursive matrix multiplication
+        public static Direction operator *(int[,] rot, Direction dir)
+        {
+            Direction newDir = Directions.None;
             for (int i = 0; i < dir.direction.Length; i++)
             {
                 for (int j = 0; j < dir.direction.Length; j++)
                 {
-                    newDir.direction[i] += rot.matrix[i, j] * dir.direction[j];
+                    newDir.direction[i] += rot[i, j] * dir.direction[j];
                 }
             }
             return newDir;
         }
-
     }
 
-    //class DirectionTypes
-    //{
-    //    public static readonly int[] HeadNowhere = new int[] { 0, 0 };
-    //    public static readonly int[] HeadNorth = new int[] {  0,  1 };
-    //    public static readonly int[] HeadSouth = new int[] { -1,  0 };
-    //    public static readonly int[] HeadEast  = new int[] {  0, -1 };
-    //    public static readonly int[] HeadWest  = new int[] {  1,  0 };
-    //}
-
-    class RotationMatrix
+    static class Directions
     {
-        public int[,] matrix { get; set; }
-        public RotationMatrix(int degrees)
-        {
-            double radians = degrees * PI / 180;
-            int cosv = (int)Round(Cos(radians));
-            int sinv = (int)Round(Sin(radians));
-            matrix = new int[,] {
-                { cosv, sinv },
-                { -sinv, cosv }
-            };
-        }
+        public static Direction None  { get { return new Direction( 0,  0 ); } }
+        public static Direction North { get { return new Direction( 0,  1 ); } }
+        public static Direction South { get { return new Direction(-1,  0 ); } }
+        public static Direction East  { get { return new Direction( 0, -1 ); } }
+        public static Direction West  { get { return new Direction( 1,  0 ); } }
     }
+
 }
